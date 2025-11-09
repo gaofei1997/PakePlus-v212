@@ -1,32 +1,862 @@
 <!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <link rel="stylesheet" href="styles.css" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>PakePlus App</title>
-        <script type="module" src="/main.js" defer></script>
-    </head>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>抽奖活动管理</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin:0; padding:0; }
+        body { font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif; background:#f5f7fa; padding:20px; line-height:1.6; }
+        .container { max-width: 1600px; margin: auto; }
+        .header { background:#fff; padding:30px; border-radius:18px; box-shadow:0 6px 25px rgba(0,0,0,0.08); text-align:center; margin-bottom:30px; position:relative; }
+        h1 { color:#409eff; font-size:36px; margin:0; }
+        .time-info { position:absolute; top:25px; right:30px; background:#e6f7ee; color:#67c23a; padding:10px 20px; border-radius:50px; font-weight:bold; }
+        .backup-bar { position:absolute; top:60px; right:180px; display:flex; gap:10px; }
+        .btn { padding:12px 30px; border:none; border-radius:50px; cursor:pointer; font-size:16px; margin:8px; transition:all .3s; }
+        .btn:hover { transform:translateY(-3px); box-shadow:0 8px 25px rgba(0,0,0,0.18); }
+        .btn-primary { background:#409eff; color:#fff; }
+        .btn-success { background:#67c23a; color:#fff; }
+        .btn-danger { background:#f56c6c; color:#fff; }
+        .btn-warning { background:#e6a23c; color:#fff; }
+        .btn-disabled { background:#ccc !important; cursor:not-allowed !important; }
+        .card { background:#fff; border-radius:18px; padding:28px; box-shadow:0 6px 25px rgba(0,0,0,0.08); margin-bottom:30px; }
+        .row { display:flex; gap:30px; flex-wrap:wrap; }
+        .col { flex:1; min-width:320px; }
+        .col-wide { flex:2; min-width:600px; }
+        .activity-list { max-height:700px; overflow-y:auto; background:#fafafa; border-radius:12px; }
+        .activity-item { padding:20px; border-bottom:1px solid #eee; cursor:pointer; transition:all .25s; position:relative; }
+        .activity-item:hover { background:#f0f8ff; }
+        .activity-item.active { background:#e6f7ff; border-left:5px solid #409eff; font-weight:600; }
+        .activity-item .status { position:absolute; top:20px; right:20px; background:#67c23a; color:#fff; padding:4px 12px; border-radius:20px; font-size:12px; }
+        .import-info { background:#e6f7ff; padding:20px; border-radius:12px; margin:20px 0; font-size:18px; color:#409eff; text-align:center; border:2px solid #409eff; }
+        .lock-info { background:#fff3cd; color:#e6a23c; padding:15px; border-radius:12px; margin:15px 0; font-weight:bold; text-align:center; border:2px solid #f56c6c; }
+        .table { width:100%; border-collapse:collapse; margin:20px 0; font-size:14px; }
+        .table th, .table td { padding:14px; text-align:left; border-bottom:1px solid #eee; }
+        .table th { background:#f8f9ff; font-weight:600; }
+        .table tr:hover { background:#f0f8ff; }
+        .table tr.highlight { background:#fffbe6 !important; }
+        .search-box { padding:14px; width:100%; border-radius:50px; border:1px solid #ddd; font-size:16px; margin:15px 0; outline:none; }
+        .search-box:focus { border-color:#409eff; box-shadow:0 0 0 3px rgba(64,158,255,0.2); }
+        .checkbox-group { display:flex; flex-wrap:wrap; gap:15px; margin:20px 0; }
+        .checkbox-item { display:flex; align-items:center; gap:8px; font-size:16px; }
+        .checkbox-item input { transform:scale(1.3); cursor:pointer; }
+        .pagination { display:flex; justify-content:center; gap:8px; margin:25px 0; flex-wrap:wrap; }
+        .page-btn { min-width:44px; height:44px; background:#409eff; color:#fff; border:none; border-radius:50%; cursor:pointer; font-weight:bold; font-size:15px; transition:all .3s; }
+        .page-btn:hover { background:#66b1ff; transform:scale(1.12); }
+        .page-btn.active { background:#67c23a !important; transform:scale(1.25); box-shadow:0 0 20px rgba(103,194,58,0.7); }
 
-    <body>
-        <main class="container">
-            <h1>Welcome to PakePlus</h1>
-            <form class="row" id="greet-form">
-                <input id="inputValue" placeholder="Enter a something..." />
-            </form>
-            <div class="resultBox">
-                <span>result: </span>
-                <span id="result"></span>
+        /* 统计面板 */
+        .stats-panel { background:#f8fff8; border:2px solid #67c23a; border-radius:16px; padding:20px; margin:20px 0; }
+        .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:15px; }
+        .stat-item { background:#fff; padding:16px; border-radius:12px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.05); }
+        .stat-num { font-size:28px; font-weight:bold; color:#67c23a; }
+        .stat-label { font-size:14px; color:#666; margin-top:6px; }
+
+        /* 抽奖结果弹框 */
+        .result-modal {
+            display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+            background:rgba(0,0,0,0.85); z-index:99999; justify-content:center; align-items:center;
+            animation: fadeIn 0.6s ease-out;
+        }
+        .result-content {
+            background:linear-gradient(135deg,#67c23a,#85e0a3);
+            width:90%; max-width:1000px; max-height:90vh;
+            border-radius:28px; padding:40px; position:relative; overflow:hidden;
+            box-shadow:0 20px 80px rgba(0,0,0,0.5);
+        }
+        .result-close { position:absolute; top:20px; right:30px; font-size:40px; color:white; cursor:pointer; z-index:10; }
+        .result-title { font-size:48px; color:white; text-align:center; margin-bottom:30px; text-shadow:0 4px 10px rgba(0,0,0,0.3); }
+        .result-list { max-height:65vh; overflow-y:auto; padding:20px; background:rgba(255,255,255,0.15); border-radius:20px; }
+        .result-item {
+            background:white; color:#333; padding:20px; margin:15px 0; border-radius:18px;
+            font-size:28px; font-weight:bold; box-shadow:0 8px 25px rgba(0,0,0,0.15);
+            animation: slideUp 0.6s ease-out forwards;
+        }
+        .result-item .account { font-size:18px; color:#999; margin-top:8px; font-weight:normal; }
+        @keyframes slideUp { from { transform:translateY(50px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+        @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+
+        /* 去重弹窗 */
+        .dup-modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:99999; justify-content:center; align-items:center; }
+        .dup-content { background:#fff; width:90%; max-width:900px; max-height:90vh; border-radius:20px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); }
+        .dup-header { background:#f56c6c; color:white; padding:20px; text-align:center; font-size:24px; font-weight:bold; position:relative; }
+        .dup-close { position:absolute; top:15px; right:25px; font-size:36px; color:white; cursor:pointer; }
+        .dup-body { padding:25px; max-height:70vh; overflow-y:auto; }
+        .dup-pagination { margin-top:20px; }
+
+        .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center; }
+        .modal-content { background:#fff; padding:35px; border-radius:20px; width:520px; box-shadow:0 15px 60px rgba(0,0,0,0.3); text-align:center; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>抽奖活动管理</h1>
+        <div class="time-info">
+            本地时间：<span id="currentTime">加载中...</span>
+        </div>
+
+        <div class="backup-bar">
+            <button onclick="backupData()" class="btn btn-success">备份到电脑</button>
+            <button onclick="document.getElementById('restoreFile').click()" class="btn btn-primary">恢复备份</button>
+            <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="restoreData(this)">
+        </div>
+
+        <button onclick="createNewActivity()" class="btn btn-success" style="position:absolute; top:30px; left:30px; padding:14px 32px;">
+            + 新建抽奖活动
+        </button>
+    </div>
+
+    <div id="welcomePage" class="card" style="text-align:center; padding:80px; display:none;">
+        <h2>欢迎使用抽奖系统</h2>
+        <button onclick="createNewActivity()" class="btn btn-primary" style="padding:20px 50px; font-size:22px;">立即创建活动</button>
+    </div>
+
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <h2 style="margin-bottom:20px; color:#303133;">抽奖活动列表</h2>
+                <div class="activity-list" id="activityList"></div>
             </div>
-            <div class="invokeBox">
-                <button id="openUrl">open_url_browser</button>
-                <button id="openUrlNew">open_url_new</button>
-                <button id="runCommand">run_command</button>
-                <button id="downloadFile">download_file</button>
-                <button id="getExeDir">get_exe_dir</button>
-                <button id="getEnvVar">get_env_var</button>
-                <button id="findPort">find_port</button>
+        </div>
+
+        <div class="col-wide">
+            <div class="card" id="currentActivity" style="display:none;">
+                <h2 id="activityTitle" style="color:#409eff; margin-bottom:25px;">加载中...</h2>
+
+                <div style="text-align:center; margin:25px 0;">
+                    <input type="file" id="excelFile" accept=".xlsx,.xls" style="padding:12px; font-size:16px;">
+                    <button id="importBtn" onclick="loadExcel()" class="btn btn-primary">导入名单</button>
+                    <button onclick="sampleExcel()" class="btn btn-success">下载示例</button>
+                    <button onclick="exportFullExcel()" class="btn btn-success">导出完整结果</button>
+                    <button onclick="exportParticipants()" class="btn btn-warning">导出抽奖人员</button>
+                </div>
+
+                <div id="importInfo" class="import-info" style="display:none;"></div>
+                <div id="lockInfo" class="lock-info" style="display:none;">抽奖已开始，名单已锁定，无法修改！</div>
+
+                <!-- 人员表格 -->
+                <div class="card">
+                    <h3>人员名单 <span id="totalCount" style="color:#409eff;"></span></h3>
+                    <input type="text" id="searchInput" class="search-box" placeholder="搜索姓名 / 会员账号 / 身份证号..." onkeyup="filterTable()">
+                    <div style="overflow-x:auto;">
+                        <table class="table" id="peopleTable">
+                            <thead id="peopleHead"></thead>
+                            <tbody id="peopleBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="peoplePagination"></div>
+                </div>
+
+                <!-- 奖项设置 -->
+                <div class="card">
+                    <h3>奖项设置</h3>
+                    <div style="display:flex; gap:12px; margin:20px 0;">
+                        <input type="text" id="prizeName" placeholder="奖项名称（如：一等奖）" style="flex:1; padding:14px; border-radius:50px; border:1px solid #ddd;">
+                        <input type="number" id="prizeCount" value="1" min="1" style="width:100px; padding:14px; border-radius:50px; border:1px solid #ddd;">
+                        <button onclick="addPrize()" class="btn btn-success">添加奖项</button>
+                    </div>
+                    <div id="prizeList"></div>
+                </div>
+
+                <!-- 抽奖控制台 + 统计面板 -->
+                <div class="card">
+                    <h3>抽奖控制台</h3>
+
+                    <div class="stats-panel">
+                        <h4 style="margin-bottom:15px; color:#67c23a;">分组统计</h4>
+                        <div class="stats-grid" id="statsGrid"></div>
+                    </div>
+
+                    <div style="margin:20px 0;">
+                        <div class="checkbox-group">
+                            <strong>选择奖项：</strong>
+                            <div id="prizeCheckboxes"></div>
+                        </div>
+                        <div class="checkbox-group">
+                            <strong>选择分组：</strong>
+                            <div id="groupCheckboxes"></div>
+                        </div>
+                    </div>
+                    <div style="text-align:center; margin:40px 0;">
+                        <button id="drawBtn" onclick="startDraw()" class="btn btn-primary" style="padding:25px 100px; font-size:28px;">
+                            开始抽奖（一次性抽完）
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 中奖记录表格 -->
+                <div class="card">
+                    <h3>中奖记录 <span id="winnerCount" style="color:#f56c6c;"></span></h3>
+                    <input type="text" id="winnerSearch" class="search-box" placeholder="搜索姓名 / 会员账号 / 身份证号..." onkeyup="filterWinners()">
+                    <table class="table" id="winnerTable">
+                        <thead><tr><th>奖项</th><th>中奖人</th><th>组别</th><th>账号</th><th>身份证</th><th>时间</th></tr></thead>
+                        <tbody id="winnerBody"></tbody>
+                    </table>
+                    <div class="pagination" id="winnerPagination"></div>
+                </div>
             </div>
-        </main>
-    </body>
+        </div>
+    </div>
+</div>
+
+<!-- 抽奖结果弹框 -->
+<div class="result-modal" id="resultModal">
+    <div class="result-content">
+        <div class="result-close" onclick="closeResult()">X</div>
+        <div class="result-title">恭喜中奖！</div>
+        <div class="result-list" id="resultList"></div>
+    </div>
+</div>
+
+<!-- 去重数据弹窗 -->
+<div class="dup-modal" id="dupModal">
+    <div class="dup-content">
+        <div class="dup-header">检测到重复会员账号，已自动去重 <span class="dup-close" onclick="closeDup()">X</span></div>
+        <div class="dup-body">
+            <p style="margin-bottom:15px; color:#f56c6c;">以下 <strong id="dupCount">0</strong> 条重复数据已被移除（保留第一条）：</p>
+            <table class="table">
+                <thead id="dupHead"></thead>
+                <tbody id="dupBody"></tbody>
+            </table>
+            <div class="pagination dup-pagination" id="dupPagination"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="createModal">
+    <div class="modal-content">
+        <h2 style="color:#409eff;">新建抽奖活动</h2>
+        <input type="text" id="newActivityName" placeholder="请输入活动名称">
+        <div style="text-align:right; margin-top:30px;">
+            <button onclick="closeModal()" class="btn" style="background:#eee;">取消</button>
+            <button onclick="confirmCreate()" class="btn btn-success">创建</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const STORAGE_KEY = 'company_lottery_king_ultimate_2025';
+    const PAGE_SIZE = 10;
+    let activities = [];
+    let currentId = null;
+    let allPeople = [];
+    let rawHeaders = [];
+    let rawData = [];
+    let currentPage = 1;
+    let winnerPage = 1;
+    let dupPage = 1;
+    let isLocked = false;
+    let duplicated = [];
+    let currentPrizes = [];
+    let currentWinners = [];
+
+    window.onload = function() {
+        updateClock();
+        setInterval(updateClock, 1000);
+        loadActivities();
+    };
+
+    function updateClock() {
+        const el = document.getElementById('currentTime');
+        if (el) el.textContent = new Date().toLocaleString('zh-CN');
+    }
+
+    function loadActivities() {
+        const data = localStorage.getItem(STORAGE_KEY);
+        if (data) {
+            try { activities = JSON.parse(data); } catch(e) { activities = []; }
+        }
+        renderActivityList();
+        const welcome = document.getElementById('welcomePage');
+        if (welcome) welcome.style.display = activities.length === 0 ? 'block' : 'none';
+        if (activities.length > 0) selectActivity(activities[activities.length-1].id);
+    }
+
+    function createNewActivity() {
+        document.getElementById('newActivityName').value = `抽奖活动 - ${new Date().toLocaleDateString()}`;
+        document.getElementById('createModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('createModal').style.display = 'none';
+    }
+
+    function confirmCreate() {
+        const name = document.getElementById('newActivityName').value.trim();
+        if (!name) return alert('请输入活动名称');
+
+        const newAct = {
+            id: Date.now(),
+            name,
+            date: new Date().toLocaleString('zh-CN'),
+            people: [],
+            prizes: [],
+            winners: [],
+            locked: false,
+            headers: [],
+            raw: []
+        };
+        activities.push(newAct);
+        saveActivities();
+        renderActivityList();
+        selectActivity(newAct.id);
+        closeModal();
+        document.getElementById('welcomePage').style.display = 'none';
+    }
+
+    function selectActivity(id) {
+        currentId = id;
+        const act = activities.find(a => a.id === id);
+        if (!act) return;
+
+        document.getElementById('currentActivity').style.display = 'block';
+        document.getElementById('activityTitle').textContent = act.name;
+
+        allPeople = act.people || [];
+        currentPrizes = act.prizes || [];
+        currentWinners = act.winners || [];
+        rawHeaders = act.headers || [];
+        rawData = act.raw || [];
+        isLocked = act.locked || false;
+
+        updateLockStatus();
+        renderPeopleTable();
+        renderPrizeList();
+        renderCheckboxes();
+        renderWinnerTable();
+        renderStats();
+        renderActivityList();
+    }
+
+    function updateLockStatus() {
+        const importBtn = document.getElementById('importBtn');
+        const fileInput = document.getElementById('excelFile');
+        const lockInfo = document.getElementById('lockInfo');
+
+        if (isLocked) {
+            importBtn.disabled = true;
+            importBtn.classList.add('btn-disabled');
+            fileInput.disabled = true;
+            lockInfo.style.display = 'block';
+        } else {
+            importBtn.disabled = false;
+            importBtn.classList.remove('btn-disabled');
+            fileInput.disabled = false;
+            lockInfo.style.display = 'none';
+        }
+    }
+
+    function saveActivities() {
+        if (currentId) {
+            const act = activities.find(a => a.id === currentId);
+            if (act) {
+                act.people = allPeople;
+                act.prizes = currentPrizes;
+                act.winners = currentWinners;
+                act.locked = isLocked;
+                act.headers = rawHeaders;
+                act.raw = rawData;
+            }
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(activities));
+    }
+
+    function renderActivityList() {
+        const list = document.getElementById('activityList');
+        if (!list) return;
+        if (activities.length === 0) {
+            list.innerHTML = '<div style="text-align:center; color:#999; padding:80px;">暂无活动，点击新建</div>';
+            return;
+        }
+        list.innerHTML = activities.map(a => `
+    <div class="activity-item ${a.id===currentId?'active':''}" onclick="selectActivity(${a.id})">
+      <div><strong style="font-size:18px;">${a.name}</strong></div>
+      <div style="font-size:13px; color:#999; margin:8px 0;">
+        ${a.date} · ${a.winners.length}人中奖 ${a.locked ? '· 已锁定' : ''}
+      </div>
+      ${a.id===currentId ? '<div class="status">进行中</div>' : ''}
+    </div>
+  `).join('');
+    }
+
+    function loadExcel() {
+        if (isLocked) {
+            alert('抽奖已开始，名单已锁定，无法修改！');
+            return;
+        }
+
+        const file = document.getElementById('excelFile').files[0];
+        if (!file) return alert('请先选择一个文件');
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const wb = XLSX.read(e.target.result, {type: 'array'});
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(ws, {header:1, defval: ''});
+
+                if (json.length < 2) return alert('Excel数据为空');
+
+                rawHeaders = json[0];
+                rawData = json.slice(1);
+
+                const h = rawHeaders.map(c => c.toString().toLowerCase());
+                const accountCol = h.findIndex(c => /账号|account/.test(c));
+                if (accountCol === -1) return alert('未检测到“会员账号”列');
+
+                const nameCol = h.findIndex(c => /姓名|name/.test(c));
+                const idCol = h.findIndex(c => /身份证|id/.test(c));
+                const groupCol = h.findIndex(c => /组别|group/.test(c));
+
+                const seenAccounts = new Map();
+                duplicated = [];
+                const tempPeople = [];
+
+                for (let i = 0; i < rawData.length; i++) {
+                    const row = rawData[i];
+                    const account = (row[accountCol] || '').toString().trim();
+                    const person = {
+                        raw: row,
+                        account: account,
+                        name: nameCol >= 0 ? (row[nameCol] || '').toString().trim() : '',
+                        idcard: idCol >= 0 ? (row[idCol] || '').toString().trim() : '',
+                        group: groupCol >= 0 ? (row[groupCol] || '未分组').toString().trim() : '未分组',
+                        prize: ''
+                    };
+
+                    if (account && seenAccounts.has(account)) {
+                        duplicated.push(person);
+                    } else {
+                        if (account) seenAccounts.set(account, true);
+                        tempPeople.push(person);
+                    }
+                }
+
+                allPeople = tempPeople;
+                renderPeopleTable();
+                renderStats();
+                saveActivities();
+
+                document.getElementById('importInfo').innerHTML = `
+        成功导入 <strong style="font-size:28px; color:#67c23a;">${allPeople.length}</strong> 人
+        ${duplicated.length > 0 ? `<span style="color:#f56c6c;"> · 移除 ${duplicated.length} 条重复</span>` : ' <span style="color:#67c23a;">· 无重复</span>'}
+      `;
+                document.getElementById('importInfo').style.display = 'block';
+
+                if (duplicated.length > 0) {
+                    document.getElementById('dupCount').textContent = duplicated.length;
+                    dupPage = 1;
+                    renderDupTable();
+                    document.getElementById('dupModal').style.display = 'flex';
+                }
+
+                confetti({particleCount: 200, spread: 70});
+            } catch(err) {
+                alert('文件解析失败，请检查格式');
+                console.error(err);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function renderDupTable() {
+        const thead = document.getElementById('dupHead');
+        const tbody = document.getElementById('dupBody');
+        thead.innerHTML = '<tr>' + rawHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+        const start = (dupPage - 1) * PAGE_SIZE;
+        const pageData = duplicated.slice(start, start + PAGE_SIZE);
+
+        tbody.innerHTML = pageData.map(p =>
+            `<tr style="background:#fff2f0;">${p.raw.map(cell => `<td>${cell}</td>`).join('')}</tr>`
+        ).join('');
+
+        renderPagination('dupPagination', duplicated.length, dupPage, 'goToDupPage');
+    }
+
+    function goToDupPage(page) {
+        dupPage = page;
+        renderDupTable();
+    }
+
+    function closeDup() {
+        document.getElementById('dupModal').style.display = 'none';
+    }
+
+    function sampleExcel() {
+        const data = [["序号","组别","姓名","会员账号","身份证号","领奖信息1","领奖信息2","领奖信息3","领奖信息4"],
+            ["1","A组","张三","13800138000","110101199001011234","地址1","电话1","备注1","其他1"]];
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "抽奖名单");
+        XLSX.writeFile(wb, "抽奖名单示例.xlsx");
+    }
+
+    function renderStats() {
+        const grid = document.getElementById('statsGrid');
+        if (!grid || allPeople.length === 0) {
+            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#999;">暂无数据</div>';
+            return;
+        }
+
+        const groups = {};
+        allPeople.forEach(p => {
+            if (!groups[p.group]) groups[p.group] = { total: 0, won: 0 };
+            groups[p.group].total++;
+            if (p.prize) groups[p.group].won++;
+        });
+
+        const wonAccounts = new Set(currentWinners.map(w => w.account));
+        const totalWon = wonAccounts.size;
+
+        let html = `
+    <div class="stat-item">
+      <div class="stat-num">${allPeople.length}</div>
+      <div class="stat-label">总人数</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">${totalWon}</div>
+      <div class="stat-label">已中奖</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">${allPeople.length - totalWon}</div>
+      <div class="stat-label">未中奖</div>
+    </div>
+  `;
+
+        Object.keys(groups).forEach(g => {
+            const { total, won } = groups[g];
+            html += `
+      <div class="stat-item">
+        <div class="stat-num">${total}</div>
+        <div class="stat-label">${g}组 · 总人数</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">${won}</div>
+        <div class="stat-label">${g}组 · 已中奖</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">${total - won}</div>
+        <div class="stat-label">${g}组 · 可抽</div>
+      </div>
+    `;
+        });
+
+        grid.innerHTML = html;
+    }
+
+    function renderPeopleTable() {
+        const thead = document.getElementById('peopleHead');
+        const tbody = document.getElementById('peopleBody');
+        const q = document.getElementById('searchInput').value.toLowerCase();
+
+        thead.innerHTML = '<tr>' + rawHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+        const filtered = allPeople.filter(p =>
+            p.name.toLowerCase().includes(q) ||
+            p.account.includes(q) ||
+            p.idcard.includes(q)
+        );
+
+        document.getElementById('totalCount').textContent = `（共 ${filtered.length} 人）`;
+
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const pageData = filtered.slice(start, start + PAGE_SIZE);
+
+        tbody.innerHTML = pageData.map(p => {
+            const rowHtml = p.raw.map((cell, i) => {
+                const text = cell === undefined || cell === null ? '' : cell.toString();
+                const highlight = q && (
+                    (rawHeaders[i] && rawHeaders[i].toLowerCase().includes('姓名') && p.name.toLowerCase().includes(q)) ||
+                    (rawHeaders[i] && rawHeaders[i].toLowerCase().includes('账号') && p.account.includes(q)) ||
+                    (rawHeaders[i] && rawHeaders[i].toLowerCase().includes('身份证') && p.idcard.includes(q))
+                );
+                return `<td${highlight ? ' class="highlight"' : ''}>${text}</td>`;
+            }).join('');
+            return `<tr>${rowHtml}</tr>`;
+        }).join('');
+
+        renderPagination('peoplePagination', filtered.length, currentPage, 'goToPage', 'people');
+    }
+
+    function filterTable() {
+        currentPage = 1;
+        renderPeopleTable();
+    }
+
+    function filterWinners() {
+        winnerPage = 1;
+        renderWinnerTable();
+    }
+
+    function renderWinnerTable() {
+        const q = document.getElementById('winnerSearch').value.toLowerCase();
+        const filtered = currentWinners.filter(w =>
+            w.name.toLowerCase().includes(q) ||
+            w.account.includes(q) ||
+            (w.idcard && w.idcard.includes(q))
+        );
+
+        document.getElementById('winnerCount').textContent = `（共 ${filtered.length} 人中奖）`;
+
+        const start = (winnerPage - 1) * PAGE_SIZE;
+        const pageData = filtered.slice(start, start + PAGE_SIZE);
+
+        document.getElementById('winnerBody').innerHTML = pageData.map(w => `
+    <tr class="${q ? 'highlight' : ''}">
+      <td><strong>${w.prize}</strong></td>
+      <td><strong>${w.name}</strong></td>
+      <td>${w.group}</td>
+      <td>${w.account}</td>
+      <td>${w.idcard || ''}</td>
+      <td>${w.time}</td>
+    </tr>
+  `).join('');
+
+        renderPagination('winnerPagination', filtered.length, winnerPage, 'goToPage', 'winner');
+    }
+
+    function renderPagination(containerId, totalItems, currentPageNum, callbackFunc, type) {
+        const container = document.getElementById(containerId);
+        const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+        if (totalPages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+        const maxButtons = 9;
+        let startPage = Math.max(1, currentPageNum - Math.floor(maxButtons / 2));
+        let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+        if (endPage - startPage + 1 < maxButtons) {
+            startPage = Math.max(1, endPage - maxButtons + 1);
+        }
+
+        if (startPage > 1) {
+            html += `<button class="page-btn" onclick="${callbackFunc}('${type}', 1)">1</button>`;
+            if (startPage > 2) html += `<span style="padding:0 10px; color:#999;">...</span>`;
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            html += `<button class="page-btn ${i === currentPageNum ? 'active' : ''}" onclick="${callbackFunc}('${type}', ${i})">${i}</button>`;
+        }
+
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) html += `<span style="padding:0 10px; color:#999;">...</span>`;
+            html += `<button class="page-btn" onclick="${callbackFunc}('${type}', ${totalPages})">${totalPages}</button>`;
+        }
+
+        container.innerHTML = html;
+    }
+
+    function goToPage(type, page) {
+        if (type === 'people') {
+            currentPage = page;
+            renderPeopleTable();
+        } else if (type === 'winner') {
+            winnerPage = page;
+            renderWinnerTable();
+        }
+    }
+
+    function renderPrizeList() {
+        const list = document.getElementById('prizeList');
+        if (!currentPrizes || currentPrizes.length === 0) {
+            list.innerHTML = '<div style="text-align:center; color:#999; padding:40px;">暂无奖项</div>';
+            return;
+        }
+        list.innerHTML = currentPrizes.map((p, i) => `
+    <div style="background:#f8f9ff; padding:15px; border-radius:12px; margin:10px 0; border-left:5px solid #409eff;">
+      <strong style="font-size:18px;">${p.name}</strong>
+      <span style="color:#67c23a;">(${p.count}名)</span>
+      <button onclick="removePrize(${i})" class="btn btn-danger" style="float:right; padding:8px 16px;">删除</button>
+    </div>
+  `).join('');
+        renderCheckboxes();
+    }
+
+    function addPrize() {
+        if (isLocked) {
+            alert('抽奖已开始，无法修改奖项！');
+            return;
+        }
+        const name = document.getElementById('prizeName').value.trim();
+        const count = parseInt(document.getElementById('prizeCount').value) || 1;
+        if (!name) return alert('请输入奖项名称');
+        currentPrizes.push({ name, count, drawn: 0 });
+        document.getElementById('prizeName').value = '';
+        renderPrizeList();
+        saveActivities();
+    }
+
+    function removePrize(i) {
+        if (isLocked) {
+            alert('抽奖已开始，无法删除奖项！');
+            return;
+        }
+        if (confirm('确定删除？')) {
+            currentPrizes.splice(i, 1);
+            renderPrizeList();
+            saveActivities();
+        }
+    }
+
+    function renderCheckboxes() {
+        const prizeDiv = document.getElementById('prizeCheckboxes');
+        const groupDiv = document.getElementById('groupCheckboxes');
+
+        prizeDiv.innerHTML = currentPrizes.map((p, i) => `
+    <div class="checkbox-item">
+      <input type="checkbox" id="prize_${i}" checked>
+      <label for="prize_${i}">${p.name} (${p.count}名)</label>
+    </div>
+  `).join('');
+
+        const groups = [...new Set(allPeople.map(p => p.group))];
+        groupDiv.innerHTML = groups.map(g => `
+    <div class="checkbox-item">
+      <input type="checkbox" id="group_${g}" checked>
+      <label for="group_${g}">${g}</label>
+    </div>
+  `).join('');
+    }
+
+    function startDraw() {
+        if (allPeople.length === 0) return alert('请先导入名单');
+
+        const selectedPrizes = currentPrizes
+            .map((p, i) => ({prize: p, index: i}))
+            .filter((_, i) => document.getElementById(`prize_${i}`).checked);
+
+        const selectedGroups = Array.from(document.querySelectorAll('#groupCheckboxes input:checked'))
+            .map(cb => cb.id.replace('group_', ''));
+
+        if (selectedPrizes.length === 0) return alert('请至少选择一个奖项');
+        if (selectedGroups.length === 0) return alert('请至少选择一个分组');
+
+        const alreadyWonAccounts = new Set(currentWinners.map(w => w.account));
+        const pool = allPeople.filter(p =>
+            selectedGroups.includes(p.group) &&
+            !alreadyWonAccounts.has(p.account)
+        );
+
+        if (pool.length === 0) return alert('选中分组中已无可用人员');
+
+        const totalNeeded = selectedPrizes.reduce((sum, sp) => sum + (sp.prize.count - (sp.prize.drawn || 0)), 0);
+        if (pool.length < totalNeeded) return alert(`人员不足！需要 ${totalNeeded} 人，仅剩 ${pool.length} 人`);
+
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        const winners = [];
+        let idx = 0;
+
+        for (const sp of selectedPrizes) {
+            const prize = sp.prize;
+            const count = prize.count - (prize.drawn || 0);
+            for (let i = 0; i < count; i++) {
+                const person = shuffled[idx++];
+                const winner = {
+                    name: person.name,
+                    group: person.group,
+                    account: person.account,
+                    idcard: person.idcard,
+                    prize: prize.name,
+                    time: new Date().toLocaleString('zh-CN')
+                };
+                winners.push(winner);
+                currentWinners.push(winner);
+                person.prize = prize.name;
+            }
+            prize.drawn = prize.count;
+        }
+
+        isLocked = true;
+        updateLockStatus();
+        saveActivities();
+        renderWinnerTable();
+        renderPeopleTable();
+        renderStats();
+
+        showResultModal(winners);
+        confetti({particleCount: 500, spread: 120, origin: { y: 0.6 }});
+    }
+
+    function showResultModal(winners) {
+        const modal = document.getElementById('resultModal');
+        const list = document.getElementById('resultList');
+
+        list.innerHTML = winners.map((w, i) => `
+    <div class="result-item" style="animation-delay:${i * 0.1}s;">
+      ${w.prize}：${w.name}（${w.group}）
+      <div class="account">会员账号：${w.account || '无'}</div>
+    </div>
+  `).join('');
+
+        modal.style.display = 'flex';
+    }
+
+    function closeResult() {
+        document.getElementById('resultModal').style.display = 'none';
+    }
+
+    function exportFullExcel() {
+        if (allPeople.length === 0) return alert('请先导入名单');
+
+        const headers = [...rawHeaders, '中奖结果'];
+        const data = allPeople.map(p => {
+            const row = [...p.raw];
+            row.push(p.prize || '');
+            return row;
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "完整结果");
+
+        const act = activities.find(a => a.id === currentId);
+        XLSX.writeFile(wb, `${act.name}_完整结果_${new Date().toLocaleDateString()}.xlsx`);
+    }
+
+    function exportParticipants() {
+        if (allPeople.length === 0) return alert('请先导入名单');
+
+        const ws = XLSX.utils.aoa_to_sheet([rawHeaders, ...allPeople.map(p => p.raw)]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "抽奖人员");
+
+        const act = activities.find(a => a.id === currentId);
+        XLSX.writeFile(wb, `${act.name}_抽奖人员_${new Date().toLocaleDateString()}.xlsx`);
+    }
+
+    function backupData() {
+        const data = localStorage.getItem(STORAGE_KEY);
+        if (!data) return alert('暂无数据');
+        const blob = new Blob([data], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `抽奖备份_${new Date().toLocaleDateString()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert('备份成功！');
+    }
+
+    function restoreData(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                localStorage.setItem(STORAGE_KEY, e.target.result);
+                location.reload();
+                alert('恢复成功！');
+            } catch(err) {
+                alert('恢复失败');
+            }
+        };
+        reader.readAsText(file);
+    }
+</script>
+</body>
 </html>
